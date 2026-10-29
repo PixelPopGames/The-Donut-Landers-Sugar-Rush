@@ -1,0 +1,41 @@
+(()=>{"use strict";
+const $=id=>document.getElementById(id),boardEl=$("board"),scoreEl=$("score"),bestEl=$("best"),movesEl=$("moves"),showEl=$("show"),messageEl=$("message"),W=5,H=5;
+const pieces=[{id:"sprinkles",emoji:"🧙🏻‍♀️",name:"Sprinkles",lander:true},{id:"glaze",emoji:"👻",name:"Glaze",lander:true},{id:"chocolate",emoji:"🍫",name:"Chocolate Von Donut",lander:true},{id:"pink",emoji:"🍩",name:"Pink Sprinkle"},{id:"choco",emoji:"🍩",name:"Chocolate Donut"},{id:"strawberry",emoji:"🍓",name:"Strawberry Donut"},{id:"blueberry",emoji:"🫐",name:"Blueberry Donut"},{id:"candy",emoji:"🍬",name:"Candy"},{id:"mini",emoji:"🎰",name:"Mini Donut Show",special:true}];
+let board=[],selected=-1,score=0,moves=30,combo=0,muted=false,audioCtx=null,started=false,best=0;try{best=Number(localStorage.getItem("donutMatchBest")||0)}catch(_){}bestEl.textContent=best;
+const musicNames=["theme.mp3","theme-1.mp3","theme-2.mp3","theme-3.mp3","theme-4.mp3"];let music=null,musicIndex=0,musicAllowed=false,gameStarted=false;
+function say(t){messageEl.textContent=t}
+// The Mini Donut Show symbol is intentionally rare (about 2% of new tiles).
+function randPiece(){if(Math.random()<0.02)return pieces.findIndex(p=>p.special);return Math.floor(Math.random()*(pieces.length-1))}
+function createsMatch(i,v){const x=i%W,y=Math.floor(i/W);return(x>=2&&board[i-1]===v&&board[i-2]===v)||(y>=2&&board[i-W]===v&&board[i-2*W]===v)}
+function newBoard(){board=Array.from({length:W*H},()=>randPiece());for(let i=0;i<board.length;i++){let guard=0;while(guard++<20&&createsMatch(i,board[i]))board[i]=randPiece()}render()}
+function render(){boardEl.innerHTML="";board.forEach((p,i)=>{const d=pieces[p]||pieces[0],b=document.createElement("button");b.type="button";b.className="tile"+(d.lander?" land":"")+(d.special?" special":"")+(i===selected?" selected":"");b.setAttribute("role","gridcell");b.setAttribute("aria-label",d.name);b.dataset.i=i;b.textContent=d.emoji;if(d.special){const s=document.createElement("span");s.className="spark";s.textContent="✨";b.appendChild(s)}b.addEventListener("click",()=>choose(i));boardEl.appendChild(b)});scoreEl.textContent=score.toLocaleString();movesEl.textContent=moves;showEl.textContent="+7,777"}
+function adjacent(a,b){return Math.abs(a-b)===W||(Math.floor(a/W)===Math.floor(b/W)&&Math.abs(a-b)===1)}
+function choose(i){unlockAudio();playSfx("click");if(selected===-1){selected=i;render();return}if(selected===i){selected=-1;render();return}const a=selected,b=i;selected=-1;if(adjacent(a,b)){swap(a,b);if(!findMatches().length){setTimeout(()=>{swap(a,b);render();say("Try a different swap!");playSfx("nope")},120)}else{moves--;gameStarted=true;resolveMatches(0)}}else{selected=i;render()}}
+function swap(a,b){[board[a],board[b]]=[board[b],board[a]]}
+function findMatches(){const found=new Set();for(let y=0;y<H;y++){let x=0;while(x<W){const i=y*W+x,v=board[i];let end=x+1;while(end<W&&board[y*W+end]===v)end++;if(end-x>=3)for(let k=x;k<end;k++)found.add(y*W+k);x=end}}for(let x=0;x<W;x++){let y=0;while(y<H){const i=y*W+x,v=board[i];let end=y+1;while(end<H&&board[end*W+x]===v)end++;if(end-y>=3)for(let k=y;k<end;k++)found.add(k*W+x);y=end}}return[...found]}
+function longestRun(hits){const set=new Set(hits);let longest=3;for(const i of hits){const v=board[i],x=i%W,y=Math.floor(i/W);let n=1;for(let xx=x-1;xx>=0&&board[y*W+xx]===v;xx--)n++;for(let xx=x+1;xx<W&&board[y*W+xx]===v;xx++)n++;longest=Math.max(longest,n);n=1;for(let yy=y-1;yy>=0&&board[yy*W+x]===v;yy--)n++;for(let yy=y+1;yy<H&&board[yy*W+x]===v;yy++)n++;longest=Math.max(longest,n)}return Math.min(5,longest)}
+function burstAt(i,kind){const tile=boardEl.children[i];if(!tile)return;tile.classList.add("matched-burst");const burst=document.createElement("span");burst.className="burst-ring";tile.appendChild(burst);for(let n=0;n<10;n++){const particle=document.createElement("i");particle.className="burst-particle p"+n;particle.textContent=["✦","•","✧","★"][n%4];tile.appendChild(particle)}}
+function resolveMatches(depth){const hits=findMatches();if(!hits.length){combo=0;render();checkEnd();return}combo++;
+// Score is based on the longest line cleared: three, four, five, or a rare 777 line.
+const run=longestRun(hits),specialCount=hits.filter(i=>pieces[board[i]]&&pieces[board[i]].special).length;
+const comboMultiplier=Math.min(3,1+(combo-1)*0.5);
+let basePerTile=100,matchBonus=0,kind="match3",label="SWEET MATCH!";
+if(run===4){basePerTile=175;matchBonus=350;kind="match4";label="SUPER MATCH!"}
+if(run>=5){basePerTile=300;matchBonus=1000;kind="match5";label="MEGA MATCH!"}
+const jackpot=specialCount>=3&&run>=3;
+if(jackpot){matchBonus+=7777;kind="jackpot";label="MINI DONUT SHOW JACKPOT!"}
+const earned=Math.round((hits.length*basePerTile+matchBonus)*comboMultiplier);score+=earned;playSfx(kind);
+if(jackpot){say(`🎰 777 JACKPOT! +${earned.toLocaleString()} POINTS!`)}else if(run>=5){say(`💥 ${label} +${earned.toLocaleString()} points!`)}else if(run===4){say(`✨ ${label} +${earned.toLocaleString()} points!`)}else{say(combo>1?`COMBO x${comboMultiplier.toFixed(1)}! +${earned.toLocaleString()}`:`${label} +${earned.toLocaleString()} points!`)}
+hits.forEach(i=>burstAt(i,run));hits.forEach(i=>board[i]=-1);
+setTimeout(()=>{for(let x=0;x<W;x++){let write=H-1;for(let y=H-1;y>=0;y--){const i=y*W+x;if(board[i]!==-1){board[write*W+x]=board[i];write--}}while(write>=0){board[write*W+x]=randPiece();write--}}render();if(findMatches().length&&depth<10)resolveMatches(depth+1);else{combo=0;render();checkEnd()}},560)}
+function checkEnd(){if(score>best){best=score;try{localStorage.setItem("donutMatchBest",String(best))}catch(_){}bestEl.textContent=best}if(moves<=0)showModal("GAME OVER","Sweet run!","You scored "+score.toLocaleString()+" points. Start a new game and beat your best!","🍩")}
+function showModal(eyebrow,title,text,icon){$("modalEyebrow").textContent=eyebrow;$("modalTitle").textContent=title;$("modalText").textContent=text;$("modalIcon").textContent=icon;$("modal").classList.remove("hidden")}
+$("modalOk").addEventListener("click",()=>{$("modal").classList.add("hidden");if(moves<=0)resetGame()});$("newGameBtn").addEventListener("click",()=>{unlockAudio();playSfx("click");resetGame()});
+function resetGame(){score=0;moves=30;combo=0;selected=-1;gameStarted=false;musicIndex=0;newBoard();say("Match any 3 or more!");if(musicAllowed)startMusic()}
+$("shuffleBtn").addEventListener("click",()=>{unlockAudio();playSfx("shuffle");board.sort(()=>Math.random()-.5);selected=-1;render();say("Board mixed up!")});
+$("soundToggle").addEventListener("click",()=>{muted=!muted;$("soundToggle").textContent=muted?"🔇":"🔊";if(!muted){unlockAudio();startMusic()}else if(music)music.pause()});
+function unlockAudio(){if(!audioCtx)audioCtx=new(window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==="suspended")audioCtx.resume();musicAllowed=true;if(!started){started=true;startMusic()}}
+function playSfx(kind){if(muted)return;unlockAudio();const now=audioCtx.currentTime,notes={click:[520],nope:[180,140],match:[660,820,990],match3:[660,820,990],match4:[520,720,920,1180,1440],match5:[440,660,880,1100,1320,1760],big:[520,720,920,1180],lander:[620,830,1040],jackpot:[392,523,659,784,988,1175,1568,2093],shuffle:[300,420,350,520],bonus:[660,880]};(notes[kind]||[500]).forEach((f,i)=>{const o=audioCtx.createOscillator(),g=audioCtx.createGain();o.type=kind==="nope"?"triangle":(kind==="match5"||kind==="jackpot"?"square":"sine");o.frequency.setValueAtTime(f,now+i*.075);g.gain.setValueAtTime(.0001,now+i*.075);g.gain.exponentialRampToValueAtTime(kind==="match5"?.16:.12,now+i*.075+.012);g.gain.exponentialRampToValueAtTime(.0001,now+i*.075+(kind==="match5"?.24:.16));o.connect(g);g.connect(audioCtx.destination);o.start(now+i*.075);o.stop(now+i*.075+(kind==="match5"?.26:.18))})}
+function startMusic(){if(muted||!musicAllowed)return;if(music){music.pause();music=null}const names=gameStarted?musicNames.slice(1):[musicNames[0]];const name=names[musicIndex%names.length];const a=new Audio("assets/music/"+name);a.loop=true;a.volume=.23;a.addEventListener("ended",()=>{musicIndex=(musicIndex+1)%4;startMusic()});a.addEventListener("error",()=>{music=null},{once:true});a.play().then(()=>{music=a}).catch(()=>{})}
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&musicAllowed&&!muted&&(!music||music.paused))startMusic()});newBoard();
+})();
